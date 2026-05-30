@@ -1,0 +1,71 @@
+# excel_comparer — AI agent guide
+
+Compare `.xlsx` workbooks against a *golden* reference. Pure-Python library + thin
+CLI + optional FastAPI web UI. Single runtime dep is `openpyxl`; `web` extra adds
+FastAPI/Uvicorn/Jinja2.
+
+## Architecture
+
+Three layers, kept deliberately small and independent:
+
+- `excel_comparer/` — the library. Import surface is fixed by `__init__.py`:
+  `ExcelComparer`, `DiffCategory`, `Difference`, `format_differences`.
+  - `models.py` — `DiffCategory` (StrEnum: `SHEET_MISSING|SHEET_EXTRA|VALUE|FORMAT|MERGED_CELL`)
+    and the frozen `Difference` dataclass. `Difference.message` is computed per-category;
+    do not store it as a field.
+  - `comparer.py` — `ExcelComparer(golden_path, float_tolerance=0.0, diff_categories=...)`.
+    Loads golden eagerly with `data_only=True` (cached values only, formulas are NOT inspected).
+    `compare(*others)` always returns `dict[str, list[Difference]]` keyed by the original
+    path string, even for a single file. Matching is strict: sheets by exact name, cells by
+    coordinate (1-indexed loops over `max_row`/`max_column`).
+  - `reporting.py` — `format_differences()` groups `SHEET_MISSING/EXTRA` at workbook level,
+    everything else under `Sheet "<name>"`. The web UI mirrors this grouping in JS.
+  - `cli.py` — argparse entry point. CLI exit code = **number of files with ≥1 diff**
+    (not 0/1), see `main()`.
+- `webapp/` — FastAPI app (`webapp.main:app`). Only loaded when `[web]` extra is installed.
+  Saves uploads to a `tempfile.TemporaryDirectory`, instantiates `ExcelComparer` per request,
+  serialises diffs via `_serialise_diff` (`asdict` + `_json_safe` stringifies non-primitives).
+  Enforces `MAX_FILE_BYTES = 25 MB` and `.xlsx` only.
+- `main.py` / `selftest.py` at repo root are thin runners (CLI shim and end-to-end smoke test).
+
+## Project-specific conventions
+
+- **Add a new format attribute** by appending to `_FORMAT_ATTRIBUTES` in `comparer.py`
+  as `(dotted_path, label)`. `_get_attr_path` walks the path and returns `None` if any
+  step is missing — rely on this rather than `try/except AttributeError`.
+- **Adding a new `DiffCategory`** requires updates in 4 places: the enum, `Difference.message`,
+  the `_compare_*` dispatch in `ExcelComparer._compare_sheet`, and the JS `renderDiffGroups`
+  in `webapp/static/app.js` (which hard-codes `SHEET_MISSING`/`SHEET_EXTRA` as workbook-level).
+- Empty cells: `_is_empty` treats both `None` and `""` as no-value. Format diffs are skipped
+  when both sides are empty (see `_compare_sheet`).
+- Float comparison uses `math.isclose(..., abs_tol=float_tolerance, rel_tol=0.0)` — absolute
+  tolerance only, no relative.
+- `diff_categories` is a tuple filter applied at collection time; defaults to
+  `ExcelComparer.DEFAULT_DIFF_CATEGORIES = (VALUE, SHEET_MISSING, SHEET_EXTRA)`
+  (FORMAT and MERGED_CELL are opt-in).
+- Python target is `>=3.11` in `pyproject.toml` (floor is driven by `enum.StrEnum` and `X | Y` types).
+
+## Developer workflows
+
+```bash
+uv sync                       # library only
+uv sync --extra web           # include FastAPI/Uvicorn for the webapp
+uv run python selftest.py     # end-to-end smoke test (builds temp xlsx pair)
+uv run python main.py golden.xlsx other.xlsx           # CLI via shim
+uv run excel-comparer golden.xlsx other.xlsx --float-tol 1e-9  # installed entry point
+uv run uvicorn webapp.main:app --reload                # web UI on :8000
+docker compose up --build                              # containerised web UI
+```
+
+There is **no test suite, linter, or formatter** configured. `selftest.py` is the
+canonical "does it still work" check — keep it green and extend it when adding diff
+categories or format attributes. The repo-root `golden.xlsx`, `other.xlsx`, `test.xlsx`
+are throwaway fixtures.
+
+## Web API contract (do not break)
+
+`POST /api/compare` — multipart form: `golden` (file), `others` (repeatable file),
+`float_tol` (float ≥ 0), `categories` (repeatable string, also accepts comma-joined).
+Response shape is built in `webapp/main.py` and consumed by `webapp/static/app.js`
+(`renderFileResult`, `renderDiffGroups`); changes must be made in both places.
+The summary dict always contains every `DiffCategory` value plus `TOTAL`.
