@@ -3,7 +3,7 @@ name = "excel-comparer"
 version = "0.1.0"
 description = "Compare Excel workbooks against a golden file."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "openpyxl>=3.1",
 ]

@@ -27,7 +27,7 @@ sync the project:
 uv sync
 ```
 
-This requires Python 3.13+ and installs `openpyxl` as the only runtime
+This requires Python 3.11+ and installs `openpyxl` as the only runtime
 dependency. To include the web UI extras, run `uv sync --extra web`.
 
 ## Library usage
