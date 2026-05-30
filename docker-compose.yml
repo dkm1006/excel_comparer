@@ -1,0 +1,8 @@
+services:
+  web:
+    build: .
+    image: excel-comparer-web:latest
+    container_name: excel-comparer-web
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

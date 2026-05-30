@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Excel Comparer</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>📊 Excel Comparer</h1>
+      <p class="tagline">
+        Compare one or more <code>.xlsx</code> workbooks against a
+        <strong>golden</strong> reference file.
+      </p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>1. Upload files</h2>
+        <form id="compare-form" autocomplete="off">
+          <div class="field">
+            <label for="golden">Golden file (reference)</label>
+            <input
+              type="file"
+              id="golden"
+              name="golden"
+              accept=".xlsx"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label for="others">Candidate file(s) to compare</label>
+            <input
+              type="file"
+              id="others"
+              name="others"
+              accept=".xlsx"
+              multiple
+              required
+            />
+            <small>Hold Cmd/Ctrl to select multiple files.</small>
+          </div>
+
+          <div class="field">
+            <label for="float_tol">Float tolerance</label>
+            <input
+              type="number"
+              id="float_tol"
+              name="float_tol"
+              value="0"
+              step="any"
+              min="0"
+            />
+            <small
+              >Absolute tolerance for numeric cell comparisons (default
+              <code>0</code> = exact equality).</small
+            >
+          </div>
+
+          <fieldset class="field">
+            <legend>Diff categories to report</legend>
+            {% for c in categories %}
+            <label class="checkbox">
+              <input
+                type="checkbox"
+                name="categories"
+                value="{{ c }}"
+                {% if c in default_categories %}checked{% endif %}
+              />
+              <span>{{ c }}</span>
+            </label>
+            {% endfor %}
+          </fieldset>
+
+          <div class="actions">
+            <button type="submit" id="submit-btn">Compare</button>
+            <button type="button" id="reset-btn" class="secondary">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="status" class="status" hidden></section>
+
+      <section id="results" class="results" hidden>
+        <h2>2. Results</h2>
+        <div id="results-body"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Powered by <code>excel_comparer</code> &middot;
+        <a href="/healthz">/healthz</a> &middot;
+        <a href="/docs">/docs</a>
+      </p>
+    </footer>
+
+    <script src="{{ url_for('static', path='/app.js') }}"></script>
+  </body>
+</html>

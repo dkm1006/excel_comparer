@@ -19,12 +19,16 @@ Matching is **strict**: sheets by exact name, cells by coordinate
 
 ## Installation
 
+This project uses [uv](https://docs.astral.sh/uv/) for environment and
+dependency management. Install uv first (see the upstream docs), then
+sync the project:
+
 ```bash
-pip install -e .
+uv sync
 ```
 
 This requires Python 3.13+ and installs `openpyxl` as the only runtime
-dependency.
+dependency. To include the web UI extras, run `uv sync --extra web`.
 
 ## Library usage
 
@@ -72,13 +76,13 @@ comparer = ExcelComparer("golden.xlsx", float_tolerance=1e-9)
 ## CLI
 
 ```bash
-python main.py golden.xlsx candidate1.xlsx candidate2.xlsx
+uv run python main.py golden.xlsx candidate1.xlsx candidate2.xlsx
 ```
 
-or, after `pip install -e .`:
+or, using the installed entry point:
 
 ```bash
-excel-comparer golden.xlsx candidate1.xlsx candidate2.xlsx --float-tol 1e-9
+uv run excel-comparer golden.xlsx candidate1.xlsx candidate2.xlsx --float-tol 1e-9
 ```
 
 Exit code = number of compared files that had at least one difference.
@@ -89,5 +93,40 @@ A small end-to-end self-test creates two sample workbooks in a temp
 directory and prints the resulting report:
 
 ```bash
-python selftest.py
+uv run python selftest.py
+```
+
+## Web UI (Docker)
+
+A small FastAPI-based frontend is available under `webapp/`. It lets you
+upload a golden workbook plus one or more candidates from the browser and
+shows a grouped, colour-coded diff report with downloadable JSON / text
+reports.
+
+Build and run with Docker:
+
+```bash
+docker build -t excel-comparer-web .
+docker run --rm -p 8000:8000 excel-comparer-web
+```
+
+Or with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Then open <http://localhost:8000>.
+
+Other useful endpoints:
+
+- `GET /docs` – auto-generated OpenAPI / Swagger UI
+- `POST /api/compare` – multipart form with fields `golden`,
+  `others` (repeatable), `float_tol`, `categories` (repeatable)
+
+To run it locally without Docker:
+
+```bash
+uv sync --extra web
+uv run uvicorn webapp.main:app --reload
 ```
