@@ -1,0 +1,180 @@
+# Example configuration for excel_comparer.
+#
+# Save this file as `excel_comparer.toml` next to the workbooks you want to
+# compare, or pass an explicit path with `--config path/to/file.toml`.
+#
+# Each `[[checks]]` entry instantiates one Check. The `name` field selects
+# the implementation; every other key is forwarded to the check's
+# constructor. See `excel_comparer/checks/` for the available checks and
+# their accepted kwargs.
+#
+# `[checks.ranges]` is a per-sheet map. Each value is one or more ranges
+# the check should look at. Accepted shapes (comma-separated tokens, or a
+# list of strings, are unioned):
+#
+#   "A1:B10"               — explicit rectangle
+#   "A:D"                  — whole-column range
+#   "C"                    — single column
+#   "3:10"                 — whole-row range
+#   "5"                    — single row
+#   "A1"                   — single cell
+#   ["B:D", "F:H"]         — list form: union of these tokens
+#   { skip = true }        — skip this sheet entirely
+#
+# Row-bounded checks (everything except baseline_comparison) start their
+# row sweep at `[defaults] data_start_row`, so passing whole columns
+# (``"O"``) is the idiomatic way to say "this column, from data_start_row
+# onward".
+
+
+# ─── Top-level defaults ──────────────────────────────────────────────────────
+# Values listed here are injected into every [[checks]] entry that doesn't
+# already specify them. Keeps individual checks short.
+
+[defaults]
+data_start_row = 3
+
+# Optional: row-bound checks (everything except baseline_comparison) skip
+# any row whose anchor column is empty. Useful when a sheet has a "key"
+# column (e.g. the IRO name in column B) and you don't want findings on
+# unused rows. Accepts a column letter or a 1-based int. Use `false`
+# (or omit the key) to disable.
+# row_anchor_column = "B"
+
+
+# ─── 1. Baseline (golden-workbook) comparison ────────────────────────────────
+# Compares each candidate workbook cell-by-cell against a baseline file.
+# `baseline_path` is optional here — if omitted, the CLI uses the positional
+# `baseline` argument. Sheets not listed in `ranges` are compared in full.
+
+[[checks]]
+name = "baseline_comparison"
+float_tolerance = 0.0
+# Available categories: "VALUE", "FORMAT", "MERGED_CELL", "SHEET_MISSING", "SHEET_EXTRA"
+categories = ["VALUE", "SHEET_MISSING", "SHEET_EXTRA"]
+
+[checks.ranges]
+"Introduction" = { skip = true }
+"Impacts" = "B:U"
+"Risks & Opportunities" = "B:Q"
+
+
+# ─── 2. Rating-band checks ───────────────────────────────────────────────────
+# Assert that every cell in the configured ranges holds a number in
+# [min_value, max_value] (optionally integer-only). The ranges drive *both*
+# the rows and the columns scanned — no separate `columns` kwarg.
+
+[[checks]]
+name = "rating_band"
+min_value = 1
+max_value = 4
+integers_only = true
+[checks.ranges]
+"Impacts" = ["O", "P", "Q", "S"]
+"Risks & Opportunities" = ["N", "O"]
+
+
+# ─── 3. Required-cells check ─────────────────────────────────────────────────
+# Assert every cell inside the configured ranges is non-empty.
+
+[[checks]]
+name = "required_cells"
+[checks.ranges]
+"Impacts" = "H:P"
+"Risks & Opportunities" = "H:O"
+
+
+# ─── 4. Minimum-text-length check ────────────────────────────────────────────
+# Assert every non-empty cell inside the configured ranges holds at least
+# `min_chars` non-whitespace characters (used for the free-text reasoning).
+
+[[checks]]
+name = "min_text_length"
+min_chars = 250
+[checks.ranges]
+"Impacts" = "U"
+"Risks & Opportunities" = "Q"
+
+
+# ─── 5. Selection-required checks ────────────────────────────────────────────
+# Assert each row picks at least one option in each column group (i.e. the
+# row isn't all "No" across the group). `ranges` gates the rows visited;
+# `column_groups` defines the column spans to test.
+
+[[checks]]
+name = "selection_required"
+forbidden_value = "No"
+column_groups = [
+    { label = "value_chain",  min_col = "I", max_col = "K" },
+    { label = "time_horizon", min_col = "L", max_col = "N" },
+]
+[checks.ranges]
+"Impacts" = "A:Z"
+
+[[checks]]
+name = "selection_required"
+forbidden_value = "No"
+column_groups = [
+    { label = "value_chain",  min_col = "H", max_col = "J" },
+    { label = "time_horizon", min_col = "K", max_col = "M" },
+]
+[checks.ranges]
+"Risks & Opportunities" = "A:Z"
+
+
+# ─── 6. Irremediable-character check ─────────────────────────────────────────
+# For Positive Impact rows, auto-correct the score to "-".
+# For Negative Impact rows, score must be an integer in [1, 4].
+
+[[checks]]
+name = "irremediable_character"
+type_column = "G"
+score_column = "Q"
+positive_value = "Positive Impact"
+negative_value = "Negative Impact"
+auto_correction_value = "-"
+valid_scores = [1, 2, 3, 4]
+[checks.ranges]
+"Impacts" = "A:Z"
+
+
+# ─── Export settings ─────────────────────────────────────────────────────────
+
+[export]
+enabled = true
+output_suffix = "_review"     # candidate.xlsx -> candidate_review.xlsx
+# output_dir = "./reviews"    # uncomment to redirect output to a directory
+
+highlight_color = "FFFF00"    # ARGB or RGB hex; yellow for flagged cells
+correction_color = "B6FFB6"   # ARGB or RGB hex; light green for corrected cells
+flag_color = "FFFF00"
+
+# Whether to write Difference.correction back into the cell on export.
+apply_corrections = true
+
+# 1-based index of the header row used as the anchor when inserting the new
+# "Review Documentation" column (rows <= header_row never get diff messages).
+header_row = 2
+
+# Header text + width of the inserted column.
+doc_column_header = "Review Documentation"
+doc_column_width = 60.0
+
+# Optional summary sheet prepended to the exported workbook.
+add_summary_sheet = true
+summary_sheet_name = "Comparison Summary"
+
+
+# 1-based column index (letter or int) of the existing Documentation column
+# on each sheet. A new column is inserted immediately to its right.
+[export.doc_columns]
+"Impacts" = "U"
+"Risks & Opportunities" = "Q"
+
+
+# ─── Text report settings ────────────────────────────────────────────────────
+
+[report]
+show_passed = true
+group_by_sheet = true
+group_by_check = true

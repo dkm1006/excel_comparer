@@ -1,49 +1,69 @@
 """End-to-end self-test for excel_comparer.
 
 Builds two small workbooks in a temporary directory with a known set of
-differences and prints the resulting diff report.  Used for quick manual
-verification:
+differences and exercises:
+
+* the check pipeline (baseline comparison, rating band, required cells,
+  min text length, irremediable character),
+* the text report (PASSED / FAILED, per-check grouping, row-prefixed lines),
+* the annotated Excel export (highlighted cells, applied auto-corrections,
+  "Review Documentation" column and summary sheet).
+
+Used for quick manual verification::
 
     python selftest.py
 """
 
-
 import tempfile
 from pathlib import Path
 
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 
-from excel_comparer import ExcelComparer, format_differences
+from excel_comparer import (
+    BaselineComparisonCheck,
+    CheckContext,
+    DiffCategory,
+    ExportConfig,
+    IrremediableCharacterCheck,
+    MinTextLengthCheck,
+    RatingBandCheck,
+    RequiredCellsCheck,
+    SheetRanges,
+    export_annotated_workbook,
+    format_differences,
+)
 
 
-def _build_golden(path: Path) -> None:
+def _build_baseline(path: Path) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "Sales"
 
-    ws["A1"] = "Item"
-    ws["B1"] = "Qty"
-    ws["A2"] = "Apples"
-    ws["B2"] = 100
-    ws["A3"] = "Bananas"
-    ws["B3"] = 50
+    ws["A1"] = "IRO-Classification"
+    ws["B1"] = "IRO-Scoring"
+    ws["C1"] = "IRO Name"
+    ws["D1"] = "Documentation"
 
-    # Bold header
+    ws["A2"] = "Type"
+    ws["B2"] = "Score"
+    ws["C2"] = "Name"
+    ws["D2"] = "Reasoning"
+
+    ws["A3"] = "Negative Impact"
+    ws["B3"] = 3
+    ws["C3"] = "iro-1"
+    ws["D3"] = "x" * 300
+
+    ws["A4"] = "Positive Impact"
+    ws["B4"] = "-"
+    ws["C4"] = "iro-2"
+    ws["D4"] = "y" * 300
+
     bold = Font(bold=True)
-    ws["A1"].font = bold
-    ws["B1"].font = bold
+    for col in ("A", "B", "C", "D"):
+        ws[f"{col}2"].font = bold
 
-    # Merged title
-    ws["A5"] = "Totals"
-    ws.merge_cells("A5:B5")
-
-    # Cell with specific fill + alignment + number format
-    ws["B2"].fill = PatternFill(patternType="solid", fgColor="FFFF00")
-    ws["B2"].alignment = Alignment(horizontal="right")
-    ws["B2"].number_format = "#,##0"
-
-    # A second sheet
     notes = wb.create_sheet("Notes")
     notes["A1"] = "Hello"
 
@@ -55,27 +75,39 @@ def _build_candidate(path: Path) -> None:
     ws = wb.active
     ws.title = "Sales"
 
-    ws["A1"] = "Item"
-    ws["B1"] = "Qty"
-    ws["A2"] = "Apples"
-    ws["B2"] = 120              # VALUE diff vs golden=100
-    # ws["A3"] missing entirely  # VALUE diff (golden=Bananas, other=None)
-    # ws["B3"] missing entirely  # VALUE diff (golden=50, other=None)
-    ws["C2"] = "extra"          # VALUE diff (golden=None, other='extra')
+    ws["A1"] = "IRO-Classification"
+    ws["B1"] = "IRO-Scoring"
+    ws["D1"] = "Documentation"
 
-    # Header no longer bold       # FORMAT diff on font.bold for A1 and B1
-    # (default font, no bold)
+    ws["A2"] = "Type"
+    ws["B2"] = "Score"
+    ws["C2"] = "Aux"
+    ws["D2"] = "Reasoning"
 
-    # No merged range            # MERGED_CELL missing in other: A5:B5
-    ws["A5"] = "Totals"
+    # Negative impact with an out-of-range score (RatingBandCheck) — also
+    # picked up by IrremediableCharacterCheck since 9 is not in {1..4}.
+    ws["A3"] = "Negative Impact"
+    ws["B3"] = 9
+    ws["C3"] = "iro-1"
+    ws["D3"] = "short"  # MinTextLengthCheck: reasoning too short
 
-    # Different fill on B2       # FORMAT diff on fill
-    ws["B2"].fill = PatternFill(patternType="solid", fgColor="00FF00")
-    # Different number_format    # FORMAT diff on number_format
-    ws["B2"].number_format = "0.00"
+    # Positive impact with the wrong score — IrremediableCharacterCheck will
+    # auto-correct to "-".
+    ws["A4"] = "Positive Impact"
+    ws["B4"] = 4
+    ws["C4"] = "iro-2"
+    ws["D4"] = "z" * 300
 
-    # "Notes" sheet missing      # SHEET_MISSING
-    # Extra sheet
+    # Row 5 has plenty of "wrong" values that *would* be flagged, but its
+    # anchor column (C, the IRO Name) is empty — so with
+    # row_anchor_column="C" configured below, the row-bound checks should
+    # all skip it. Used to verify the new "skip rows with empty anchor"
+    # behaviour.
+    ws["A5"] = "Negative Impact"
+    ws["B5"] = 99           # would trip rating_band + irremediable_character
+    ws["C5"] = None         # empty anchor -> row should be skipped
+    ws["D5"] = "too short"  # would trip min_text_length
+
     extra = wb.create_sheet("Extra")
     extra["A1"] = "surprise"
 
@@ -85,19 +117,72 @@ def _build_candidate(path: Path) -> None:
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        golden = tmp_path / "golden.xlsx"
+        baseline = tmp_path / "baseline.xlsx"
         candidate = tmp_path / "candidate.xlsx"
 
-        _build_golden(golden)
+        _build_baseline(baseline)
         _build_candidate(candidate)
 
-        comparer = ExcelComparer(golden)
-        results = comparer.compare(candidate)
+        # All row-bound checks use the IRO Name column (C) as their anchor;
+        # row 5 has an empty C and should therefore be skipped.
+        anchor = "C"
 
-        for path, diffs in results.items():
-            print(f"=== {path} ===")
-            print(format_differences(diffs))
-            print(f"\n({len(diffs)} differences total)")
+        checks = [
+            BaselineComparisonCheck(
+                baseline_path=baseline,
+                categories=(
+                    DiffCategory.VALUE,
+                    DiffCategory.SHEET_MISSING,
+                    DiffCategory.SHEET_EXTRA,
+                ),
+                ranges={"Sales": SheetRanges.parse("A3:D10")},
+            ),
+            RatingBandCheck(
+                min_value=1,
+                max_value=4,
+                integers_only=True,
+                data_start_row=3,
+                row_anchor_column=anchor,
+                ranges={"Sales": SheetRanges.parse("B")},
+            ),
+            RequiredCellsCheck(
+                data_start_row=3,
+                row_anchor_column=anchor,
+                ranges={"Sales": SheetRanges.parse("A")},
+            ),
+            MinTextLengthCheck(
+                min_chars=100,
+                data_start_row=3,
+                row_anchor_column=anchor,
+                ranges={"Sales": SheetRanges.parse("D")},
+            ),
+            IrremediableCharacterCheck(
+                type_column="A",
+                score_column="B",
+                data_start_row=3,
+                row_anchor_column=anchor,
+                ranges={"Sales": SheetRanges.parse("A:D")},
+            ),
+        ]
+
+        # Run the pipeline.
+        wb = load_workbook(filename=str(candidate), data_only=True)
+        ctx = CheckContext(workbook_path=candidate, workbook=wb)
+        diffs = []
+        for check in checks:
+            diffs.extend(check.run(ctx))
+
+        print(format_differences(diffs, file_label=str(candidate)))
+        print()
+
+        export_cfg = ExportConfig(
+            doc_columns={"Sales": 4},   # column D
+            header_row=2,
+            output_dir=str(tmp_path / "out"),
+        )
+        out = export_annotated_workbook(candidate, diffs, export_cfg)
+        print(f"Annotated copy written to: {out}")
+        print(f"({len(diffs)} findings total)")
 
 
 if __name__ == "__main__":
