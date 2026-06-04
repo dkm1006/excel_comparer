@@ -61,7 +61,7 @@ def export_annotated_workbook(
     original_path = Path(original_path)
     diffs = list(diffs)
 
-    wb: Workbook = load_workbook(filename=str(original_path))
+    wb: Workbook = load_workbook(filename=str(original_path), rich_text=True)
     unprotect_sheets(wb)
 
     highlight = PatternFill(

@@ -54,14 +54,14 @@ class RatingBandCheck:
         min_value: float = 1,
         max_value: float = 4,
         integers_only: bool = True,
-        data_start_row: int = 3,
+        header_row: int = 2,
         row_anchor_column: int | str | None = None,
         ranges: dict[str, SheetRanges] | None = None,
     ) -> None:
         self.min_value = min_value
         self.max_value = max_value
         self.integers_only = bool(integers_only)
-        self.data_start_row = int(data_start_row)
+        self.header_row = header_row
         self.row_anchor_column: int | None = (
             normalize_column(row_anchor_column) if row_anchor_column else None
         )
@@ -81,17 +81,17 @@ class RatingBandCheck:
                 continue
             last_row = find_last_data_row(
                 ws,
-                start_row=self.data_start_row,
+                start_row=self.header_row + 1,
                 scan_min_col=scan_min_col,
                 scan_max_col=scan_max_col,
             )
-            if last_row < self.data_start_row:
+            if last_row < self.header_row + 1:
                 continue
 
             anchor_empty: dict[int, bool] = {}
 
             for row, col in sr.iter_cells(
-                row_floor=self.data_start_row,
+                row_floor=self.header_row + 1,
                 row_ceiling=last_row,
                 col_ceiling=ws.max_column,
             ):

@@ -360,6 +360,34 @@ class ExportConfig:
     add_summary_sheet: bool = True
     apply_corrections: bool = True              # whether to write Difference.correction back into the cell
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ExportConfig":
+        doc_col_raw = data.get("doc_columns", {}) or {}
+        if not isinstance(doc_col_raw, dict):
+            raise ValueError("export.doc_columns must be a table mapping sheet -> column")
+        doc_columns = {
+            sheet: _parse_col(col) or 0
+            for sheet, col in doc_col_raw.items()
+        }
+
+        header_row = _parse_row(data.get("header_row")) or 2
+
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            output_suffix=str(data.get("output_suffix", "_review")),
+            output_dir=data.get("output_dir") or None,
+            highlight_color=_normalize_color(data.get("highlight_color", "FFFFFF00")),
+            correction_color=_normalize_color(data.get("correction_color", "FFB6FFB6")),
+            flag_color=_normalize_color(data.get("flag_color", "FFFFFF00")),
+            header_row=header_row,
+            doc_columns=doc_columns,
+            doc_column_header=str(data.get("doc_column_header", "Review Documentation")),
+            doc_column_width=float(data.get("doc_column_width", 60.0)),
+            summary_sheet_name=str(data.get("summary_sheet_name", "Comparison Summary")),
+            add_summary_sheet=bool(data.get("add_summary_sheet", True)),
+            apply_corrections=bool(data.get("apply_corrections", True)),
+        )
+
 
 @dataclass(frozen=True)
 class ReportConfig:
@@ -368,6 +396,10 @@ class ReportConfig:
     show_passed: bool = True
     group_by_sheet: bool = True
     group_by_check: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, bool]) -> "ReportConfig":
+        return cls(**data)
 
 
 @dataclass(frozen=True)
@@ -379,12 +411,23 @@ class Defaults:
     therefore never have to consult :class:`Defaults` at runtime.
     """
 
-    data_start_row: int = 3
+    header_row: int = 2
     # Optional "row key" column. Row-bound checks skip any row whose key
     # column is empty (intent: rows with no IRO name in column B are
     # treated as unused/blank and shouldn't generate findings). ``None``
     # disables this behaviour.
     row_anchor_column: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Defaults":
+        header_row = _parse_row(data.get("header_row")) or 2
+        # Treat falsy as "no anchor".
+        raw_anchor = data.get("row_anchor_column")
+        row_anchor_column = None if not raw_anchor else _parse_col(raw_anchor)
+        return cls(
+            header_row=header_row,
+            row_anchor_column=row_anchor_column,
+        )
 
 
 @dataclass
@@ -405,20 +448,15 @@ class Config:
     # ----------------------------- loading -------------------------------- #
 
     @classmethod
-    def load(cls, path: str | Path | None) -> "Config":
+    def load(cls, path: str | Path) -> "Config":
         """Load a config from a TOML file. ``None`` / missing file => defaults."""
-        if path is None:
-            return cls()
-        p = Path(path)
-        if not p.exists():
-            return cls()
-        with p.open("rb") as f:
+        with Path(path).open("rb") as f:
             data = tomllib.load(f)
         return cls.from_dict(data)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
-        defaults = _parse_defaults(data.get("defaults", {}) or {})
+        defaults = Defaults.from_dict(data.get("defaults", {}) or {})
 
         checks_raw = data.get("checks", []) or []
         if not isinstance(checks_raw, list):
@@ -440,8 +478,8 @@ class Config:
                 spec.setdefault(f.name, getattr(defaults, f.name))
             checks.append(spec)
 
-        export_cfg = _parse_export(data.get("export", {}) or {})
-        report_cfg = _parse_report(data.get("report", {}) or {})
+        export_cfg = ExportConfig.from_dict(data.get("export", {}))
+        report_cfg = ReportConfig.from_dict(data.get("report", {}))
 
         return cls(
             checks=checks,
@@ -481,66 +519,6 @@ def _parse_row(value: Any) -> int | None:
             raise ValueError(f"Row index must be >= 1, got {value}")
         return value
     raise ValueError(f"Cannot parse row value: {value!r}")
-
-
-def _parse_export(data: dict[str, Any]) -> ExportConfig:
-    doc_col_raw = data.get("doc_columns", {}) or {}
-    if not isinstance(doc_col_raw, dict):
-        raise ValueError("export.doc_columns must be a table mapping sheet -> column")
-    doc_columns = {
-        sheet: _parse_col(col) or 0
-        for sheet, col in doc_col_raw.items()
-    }
-
-    header_row = _parse_row(data.get("header_row")) or 2
-
-    return ExportConfig(
-        enabled=bool(data.get("enabled", True)),
-        output_suffix=str(data.get("output_suffix", "_review")),
-        output_dir=data.get("output_dir") or None,
-        highlight_color=_normalize_color(data.get("highlight_color", "FFFFFF00")),
-        correction_color=_normalize_color(data.get("correction_color", "FFB6FFB6")),
-        flag_color=_normalize_color(data.get("flag_color", "FFFFFF00")),
-        header_row=header_row,
-        doc_columns=doc_columns,
-        doc_column_header=str(data.get("doc_column_header", "Review Documentation")),
-        doc_column_width=float(data.get("doc_column_width", 60.0)),
-        summary_sheet_name=str(data.get("summary_sheet_name", "Comparison Summary")),
-        add_summary_sheet=bool(data.get("add_summary_sheet", True)),
-        apply_corrections=bool(data.get("apply_corrections", True)),
-    )
-
-
-def _parse_report(data: dict[str, Any]) -> ReportConfig:
-    return ReportConfig(
-        show_passed=bool(data.get("show_passed", True)),
-        group_by_sheet=bool(data.get("group_by_sheet", True)),
-        group_by_check=bool(data.get("group_by_check", True)),
-    )
-
-
-def _parse_defaults(data: dict[str, Any]) -> Defaults:
-    if not isinstance(data, dict):
-        raise ValueError("'defaults' must be a table")
-    allowed = {"data_start_row", "row_anchor_column"}
-    extra = set(data) - allowed
-    if extra:
-        raise ValueError(
-            f"Unknown keys in [defaults]: {sorted(extra)} (allowed: {sorted(allowed)})"
-        )
-    data_start_row = _parse_row(data.get("data_start_row")) or 3
-    # row_anchor_column: accept a column letter, a 1-based int, or `false`/None
-    # to disable. `_parse_col` accepts letters and ints; we treat falsy bools
-    # explicitly as "no anchor".
-    raw_anchor = data.get("row_anchor_column")
-    if raw_anchor is False or raw_anchor is None:
-        row_anchor_column = None
-    else:
-        row_anchor_column = _parse_col(raw_anchor)
-    return Defaults(
-        data_start_row=data_start_row,
-        row_anchor_column=row_anchor_column,
-    )
 
 
 def _coerce_ranges_map(

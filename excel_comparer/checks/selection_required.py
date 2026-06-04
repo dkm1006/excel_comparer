@@ -24,7 +24,7 @@ Configuration (TOML)
     [[checks]]
     name = "selection_required"
     forbidden_value = "No"
-    data_start_row = 3
+    header_row = 2
     column_groups = [
         { label = "value_chain",  min_col = "I", max_col = "K" },
         { label = "time_horizon", min_col = "L", max_col = "N" },
@@ -75,7 +75,7 @@ class SelectionRequiredCheck:
         *,
         column_groups: Iterable[dict[str, Any] | ColumnGroup],
         forbidden_value: str = "No",
-        data_start_row: int = 3,
+        header_row: int = 2,
         row_anchor_column: int | str | None = None,
         scan_min_col: int | str = "B",
         scan_max_col: int | str = "G",
@@ -85,7 +85,7 @@ class SelectionRequiredCheck:
             _coerce_group(g) for g in column_groups
         ]
         self.forbidden_value = str(forbidden_value)
-        self.data_start_row = int(data_start_row)
+        self.header_row = header_row
         self.row_anchor_column: int | None = (
             normalize_column(row_anchor_column) if row_anchor_column else None
         )
@@ -101,11 +101,11 @@ class SelectionRequiredCheck:
             ws = ctx.workbook[sheet_name]
             last_row = find_last_data_row(
                 ws,
-                start_row=self.data_start_row,
+                start_row=self.header_row + 1,
                 scan_min_col=self.scan_min_col,
                 scan_max_col=self.scan_max_col,
             )
-            lo, hi = sr.clamp_rows(self.data_start_row, last_row)
+            lo, hi = sr.clamp_rows(self.header_row + 1, last_row)
             # Skip any group whose anchor (min_col) is outside the configured columns.
             active_groups = [g for g in self.column_groups if sr.col_in_range(g.min_col)]
             for row in range(lo, hi + 1):

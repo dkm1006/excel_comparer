@@ -32,7 +32,7 @@ Configuration (TOML)
     negative_value = "Negative Impact"
     auto_correction_value = "-"
     valid_scores = [1, 2, 3, 4]
-    data_start_row = 3
+    header_row = 2
 
     [checks.ranges]
     Impacts = "A3:Z"
@@ -72,7 +72,7 @@ class IrremediableCharacterCheck:
         negative_value: str = "Negative Impact",
         auto_correction_value: str = "-",
         valid_scores: Iterable[int] = (1, 2, 3, 4),
-        data_start_row: int = 3,
+        header_row: int = 2,
         row_anchor_column: int | str | None = None,
         scan_min_col: int | str = "B",
         scan_max_col: int | str = "G",
@@ -80,11 +80,11 @@ class IrremediableCharacterCheck:
     ) -> None:
         self.type_column: int = normalize_column(type_column)
         self.score_column: int = normalize_column(score_column)
-        self.positive_value = str(positive_value).strip().lower()
-        self.negative_value = str(negative_value).strip().lower()
+        self.positive_value = str(positive_value).strip()
+        self.negative_value = str(negative_value).strip()
         self.auto_correction_value = auto_correction_value
         self.valid_scores: frozenset[int] = frozenset(int(s) for s in valid_scores)
-        self.data_start_row = int(data_start_row)
+        self.header_row = header_row
         self.row_anchor_column: int | None = (
             normalize_column(row_anchor_column) if row_anchor_column else None
         )
@@ -104,11 +104,11 @@ class IrremediableCharacterCheck:
             ws = ctx.workbook[sheet_name]
             last_row = find_last_data_row(
                 ws,
-                start_row=self.data_start_row,
+                start_row=self.header_row + 1,
                 scan_min_col=self.scan_min_col,
                 scan_max_col=self.scan_max_col,
             )
-            lo, hi = sr.clamp_rows(self.data_start_row, last_row)
+            lo, hi = sr.clamp_rows(self.header_row + 1, last_row)
             for row in range(lo, hi + 1):
                 if not sr.row_in_range(row):
                     continue
@@ -119,31 +119,33 @@ class IrremediableCharacterCheck:
                 type_value = ws.cell(row=row, column=self.type_column).value
                 if is_empty(type_value):
                     continue
-                type_norm = str(type_value).strip().lower()
+                type_value = str(type_value).strip()
                 score_value = ws.cell(row=row, column=self.score_column).value
                 score_coord = f"{score_letter}{row}"
 
-                if type_norm == self.positive_value:
+                if type_value.casefold() == self.positive_value.casefold():
                     if score_value != self.auto_correction_value:
                         diffs.append(
                             Difference(
                                 category=DiffCategory.INCONSISTENT_TYPE_SCORE,
                                 sheet=sheet_name,
                                 cell=score_coord,
-                                golden=f"{type_value!r} requires {self.auto_correction_value!r}",
+                                attribute=type_value,
+                                golden=self.auto_correction_value,
                                 other=score_value,
                                 correction=self.auto_correction_value,
-                                check_name=self.name,
+                                check_name=self.name
                             )
                         )
-                elif type_norm == self.negative_value:
+                elif type_value.casefold() == self.negative_value.casefold():
                     if not _is_valid_score(score_value, self.valid_scores):
                         diffs.append(
                             Difference(
                                 category=DiffCategory.INCONSISTENT_TYPE_SCORE,
                                 sheet=sheet_name,
                                 cell=score_coord,
-                                golden=f"{type_value!r} requires integer in {sorted(self.valid_scores)}",
+                                attribute=type_value,
+                                golden=sorted(self.valid_scores),
                                 other=score_value,
                                 check_name=self.name,
                             )

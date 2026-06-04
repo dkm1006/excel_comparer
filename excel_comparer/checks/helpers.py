@@ -66,6 +66,26 @@ def normalize_columns(values: Iterable[int | str]) -> list[int]:
     return [normalize_column(v) for v in values]
 
 
+def get_column_name(
+    ws: Worksheet,
+    column: int | str,
+    *,
+    header_row: int,
+) -> str | None:
+    """Return the header label for *column* read from *header_row* on *ws*.
+
+    *column* may be a 1-based int or an Excel column letter (e.g. ``"AC"``).
+    The cell value is coerced to ``str`` and stripped; empty headers return
+    ``None`` so callers can easily distinguish "no header" from "header is
+    the empty string".
+    """
+    col_idx = normalize_column(column)
+    value = ws.cell(row=header_row, column=col_idx).value
+    if is_empty(value):
+        return None
+    return str(value).strip()
+
+
 def find_last_data_row(
     ws: Worksheet,
     *,

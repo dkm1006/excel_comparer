@@ -92,11 +92,10 @@ def format_differences(
 # --------------------------------------------------------------------------- #
 
 
-def _format_top_header(diffs: list[Difference], *, file_label: str | None) -> list[str]:
+def _format_top_header(diffs: list[Difference], *, file_label: str = "") -> list[str]:
     """Top-of-report verdict + per-category count line."""
-    label = f" {file_label}" if file_label else ""
     if not diffs:
-        return [f"{PASSED}:{label} no differences."]
+        return [f"{PASSED}: {file_label} no differences."]
     counts = summarize(diffs)
     total = sum(counts.values())
     parts = ", ".join(
@@ -104,7 +103,7 @@ def _format_top_header(diffs: list[Difference], *, file_label: str | None) -> li
         for cat in DiffCategory
         if cat in counts
     )
-    return [f"{FAILED}:{label} {total} difference{'s' if total != 1 else ''} ({parts})"]
+    return [f"{FAILED}: {file_label} {total} difference{'s' if total != 1 else ''} ({parts})"]
 
 
 def _format_check_block(diffs: list[Difference], group_by_sheet: bool) -> list[str]:
@@ -125,36 +124,8 @@ def _format_check_block(diffs: list[Difference], group_by_sheet: bool) -> list[s
     for sheet in sheet_iter:
         lines.append(f'Sheet "{sheet}"')
         for d in sorted(by_sheet[sheet], key=_diff_sort_key):
-            lines.append(f"  {_format_cell_line(d)}")
+            lines.append(f"  {d.message}")
     return lines
-
-
-def _format_cell_line(d: Difference) -> str:
-    """One line per cell-bound or row-bound diff."""
-    row = d.row
-    cell = d.cell or "?"
-    if d.is_cell_bound and row is not None:
-        if d.category == DiffCategory.FORMAT:
-            return (
-                f"Row {row}, Cell {cell} [{d.category.value} {d.attribute}]: "
-                f"golden={d.golden!r} vs other={d.other!r}"
-            )
-        if d.category == DiffCategory.VALUE:
-            return (
-                f"Row {row}, Cell {cell} [{d.category.value}]: "
-                f"golden={d.golden!r} vs other={d.other!r}"
-            )
-        # All other cell-bound categories: build a compact summary that
-        # doesn't repeat the sheet/cell info already in the row prefix.
-        if d.golden is None and d.other is None:
-            payload = ""
-        elif d.golden is None:
-            payload = f": {d.other!r}"
-        else:
-            payload = f": expected {d.golden!r}, got {d.other!r}"
-        attr = f" {d.attribute}" if d.attribute else ""
-        return f"Row {row}, Cell {cell} [{d.category.value}{attr}]{payload}"
-    return d.message
 
 
 def _diff_sort_key(d: Difference) -> tuple[int, str, str]:

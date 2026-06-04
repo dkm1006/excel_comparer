@@ -5,7 +5,7 @@
 # ─── Top-level defaults ──────────────────────────────────────────────────────
 
 [defaults]
-data_start_row = 3
+header_row = 2
 # Row-bound checks (everything except baseline_comparison) skip any row
 # whose anchor column is empty. Column B holds the IRO name in this
 # survey, so rows without one are treated as unused. Use `false` (or

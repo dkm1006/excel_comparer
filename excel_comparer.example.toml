@@ -22,9 +22,9 @@
 #   { skip = true }        — skip this sheet entirely
 #
 # Row-bounded checks (everything except baseline_comparison) start their
-# row sweep at `[defaults] data_start_row`, so passing whole columns
-# (``"O"``) is the idiomatic way to say "this column, from data_start_row
-# onward".
+# row sweep at the row directly below `[defaults] header_row`, so passing
+# whole columns (``"O"``) is the idiomatic way to say "this column, from
+# the first data row onward".
 
 
 # ─── Top-level defaults ──────────────────────────────────────────────────────
@@ -32,7 +32,7 @@
 # already specify them. Keeps individual checks short.
 
 [defaults]
-data_start_row = 3
+header_row = 2
 
 # Optional: row-bound checks (everything except baseline_comparison) skip
 # any row whose anchor column is empty. Useful when a sheet has a "key"

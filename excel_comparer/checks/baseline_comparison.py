@@ -124,7 +124,7 @@ class BaselineComparisonCheck:
         ranges: dict[str, SheetRanges] | None = None,
         # Accepted for symmetry with other checks (top-level [defaults]
         # injection); unused by this check.
-        data_start_row: int | None = None,  # noqa: ARG002
+        header_row: int | None = None,  # noqa: ARG002
         row_anchor_column: int | str | None = None,  # noqa: ARG002
     ) -> None:
         self.baseline_path: Path | None = Path(baseline_path) if baseline_path else None

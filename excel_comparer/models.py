@@ -102,8 +102,7 @@ class Difference:
             return f"Merged-cell range flagged: '{self.attribute}'."
         if self.category == DiffCategory.RATING_OUT_OF_RANGE:
             return (
-                f"Column [{self.cell}] rating out of range: found [{self.other}], "
-                f"expected [{self.golden}]."
+                f"Cell [{self.cell}] rating out of range: [{self.other}] instead of [{self.golden}]."
             )
         if self.category == DiffCategory.MISSING_REQUIRED:
             return f"Required cell [{self.cell}] is empty."
@@ -111,14 +110,15 @@ class Difference:
             return f"Reasoning text too short ({self.other} characters)."
         if self.category == DiffCategory.NO_SELECTION:
             return (
-                f"No selection made in group '{self.attribute}' "
-                f"(expected [{self.golden}])."
+                f"No selection made in group '{self.attribute}' (expected [{self.golden}])."
             )
         if self.category == DiffCategory.INCONSISTENT_TYPE_SCORE:
-            return (
-                f"Corrected: Score [{self.other}] was inconsistent with the "
-                f"selected type [{self.golden}]."
+            message = (
+                f"Score [{self.other}] is inconsistent: [{self.attribute}] requires [{self.golden}]."
+                if self.correction is None else
+                f"Inconsistent score [{self.other}] was corrected: [{self.attribute}] requires [{self.golden}]."
             )
+            return message
         raise ValueError(f"Unknown DiffCategory: {self.category}")
 
 
